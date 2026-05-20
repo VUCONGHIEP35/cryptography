@@ -1,0 +1,58 @@
+# ==========================================
+# 1. PYTHON CACHE & BIÊN DỊCH
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ==========================================
+# 2. MÔI TRƯỜNG ẢO (VIRTUAL ENVIRONMENTS)
+# ==========================================
+# Tuyệt đối không push môi trường ảo của mỗi người lên Git
+venv/
+.venv/
+env/
+.env/
+
+# ==========================================
+# 3. DỮ LIỆU DỰ ÁN (DATA) - CỰC KỲ QUAN TRỌNG
+# ==========================================
+# Chặn thư mục data để không push hàng vạn bản mã/bản rõ lên Git
+data/
+*.csv
+*.json
+*.dat
+*.log
+
+# ==========================================
+# 4. TESTING (PYTEST)
+# ==========================================
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ==========================================
+# 5. CẤU HÌNH IDE & HỆ ĐIỀU HÀNH
+# ==========================================
+# VS Code
+.vscode/
+*.code-workspace
+
+# PyCharm / IntelliJ
+.idea/
+
+# macOS / Windows rác
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# 6. BẢO MẬT (SECRETS) & FRAMEWORK CACHE
+# ==========================================
+# Chặn các file chứa biến môi trường hoặc mật khẩu
+.env
+.env.local
+
+# Streamlit secrets (nếu có dùng)
+.streamlit/secrets.toml
