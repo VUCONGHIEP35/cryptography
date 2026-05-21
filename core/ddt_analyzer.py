@@ -33,3 +33,4 @@ class DDT_Analyzer:
             "count": int(ddt[dx][dy]),
             "prob": round(ddt[dx][dy] / self.size, 4)
         }
+
