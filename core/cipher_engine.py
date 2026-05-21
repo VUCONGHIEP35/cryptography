@@ -1,8 +1,8 @@
 import numpy as np
 
-# 1. Chuẩn S-Box của PRESENT (Thay vì S-Box tự chế)
+# 1. Chuẩn S-Box của PRESENT
 SBOX = np.array([0xC, 0x5, 0x6, 0xB, 0x9, 0x0, 0xA, 0xD, 0x3, 0xE, 0xF, 0x8, 0x4, 0x7, 0x1, 0x2], dtype=np.uint8)
-# 2. Chuẩn P-Box của PRESENT (Đan chéo 64 bit cực kỳ khéo léo)
+# 2. Chuẩn P-Box của PRESENT (Đan chéo 64 bit)
 PBOX = np.array([
     0, 16, 32, 48, 1, 17, 33, 49, 2, 18, 34, 50, 3, 19, 35, 51,
     4, 20, 36, 52, 5, 21, 37, 53, 6, 22, 38, 54, 7, 23, 39, 55,
@@ -20,51 +20,53 @@ class PRESENTCipher:
         """
         Áp dụng S-Box lên 16 nibble của khối 64-bit.
         """
-        result = np.zeros_like(block)
-        for i in range(16):               # 16 nibble × 4-bit = 64-bit
-            shift     = (15 - i) * 4
-            nibble    = (block >> shift) & 0xF      # trích 4-bit
+        result = np.zeros_like(block, dtype=np.uint64)
+        for i in range(16):               
+            shift     = np.uint64((15 - i) * 4)
+            nibble    = (block >> shift) & np.uint64(0xF)      
             subbed    = self.sbox[nibble].astype(np.uint64)
-            result   |= subbed << shift             # ghép lại
+            result   |= (subbed << shift)             
         return result
 
     def permute(self, block: np.ndarray) -> np.ndarray:
         """
-        Hoán vị bit theo PBOX.
-        block: shape [N], dtype uint16
+        Hoán vị bit theo PBOX (Chuẩn 64-bit).
         """
-        result = np.zeros_like(block)
+        result = np.zeros_like(block, dtype=np.uint64)
         for src_pos, dst_pos in enumerate(self.pbox):
-            bit     = (block >> (63 - src_pos)) & 1
-            shifted = (bit.astype(np.uint16) << np.uint16(15 - dst_pos)).astype(np.uint16)
-            result = np.bitwise_or(result, shifted, dtype=np.uint16)
+            # Trích xuất bit ở vị trí src_pos (tính từ trái sang phải, mốc 63)
+            bit = (block >> np.uint64(63 - src_pos)) & np.uint64(1)
+            # Dịch bit đó về đích dst_pos
+            shifted = bit << np.uint64(63 - dst_pos)
+            result |= shifted
         return result
 
     def encrypt(self, plaintexts: np.ndarray, key: int) -> np.ndarray:
         """
-        Mã hóa batch N bản rõ với 1 khóa.
-        plaintexts: shape [N], dtype uint16
-        key: uint16 (dùng làm subkey đơn giản cho tất cả vòng)
+        Mã hóa batch N bản rõ với 1 khóa (64-bit uint64).
         """
         subkeys = self._derive_subkeys(key)
-        data    = plaintexts.copy().astype(np.uint16)
+        # Ép kiểu cực kỳ nghiêm ngặt thành uint64
+        data    = plaintexts.copy().astype(np.uint64)
 
-        for r in range(self.rounds - 1):   # vòng 1 đến rounds-1
-            data = np.bitwise_xor(data, subkeys[r])   # Key Mixing
-            data = self.substitute(data)               # Substitution
-            data = self.permute(data)                  # Permutation
+        for r in range(self.rounds - 1):   
+            data = np.bitwise_xor(data, subkeys[r])   
+            data = self.substitute(data)               
+            data = self.permute(data)                  
 
         # Vòng cuối: không có Permutation
         data = np.bitwise_xor(data, subkeys[-2])
         data = self.substitute(data)
-        data = np.bitwise_xor(data, subkeys[-1])       # whitening
+        data = np.bitwise_xor(data, subkeys[-1])       
         return data
 
     def _derive_subkeys(self, master_key: int) -> list:
-        """Sinh subkeys đơn giản bằng rotation (đủ dùng cho demo)."""
-        k = master_key & 0xFFFF
+        """Sinh subkeys bằng rotation 64-bit."""
+        # Chuyển đổi giới hạn mặt nạ lên 64-bit (16 chữ F)
+        k = np.uint64(master_key & 0xFFFFFFFFFFFFFFFF)
         subkeys = []
         for i in range(self.rounds + 1):
-            subkeys.append(np.uint16(k))
-            k = ((k << 1) | (k >> 15)) & 0xFFFF   # rotate left 1-bit
+            subkeys.append(k)
+            # Rotate left 1-bit trên nền 64-bit
+            k = ((k << np.uint64(1)) | (k >> np.uint64(63))) 
         return subkeys

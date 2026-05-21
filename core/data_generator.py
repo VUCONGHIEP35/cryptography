@@ -1,6 +1,6 @@
 import numpy as np
 # Lưu ý: Sửa lại tên import nếu đồng đội của cậu đặt tên class khác trong cipher_engine.py
-from cipher_engine import PRESENTCipher 
+from core.cipher_engine import PRESENTCipher 
 
 class DataGenerator:
     def __init__(self, cipher_engine):
