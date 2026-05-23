@@ -36,8 +36,8 @@ class DataGenerator:
         return {
             "P": P,
             "P_star": P_star,
-            "C": C,
-            "C_star": C_star
+            "C1": C,         # Đổi thành C1
+            "C2": C_star     # Đổi thành C2
         }
 
 # ==========================================
