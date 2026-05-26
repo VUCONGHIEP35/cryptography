@@ -21,11 +21,13 @@ import signal
 import threading
 
 try:
-    import tornado.web
-    import tornado.ioloop
-    import tornado.websocket
+    import tornado
 except ImportError as err:
     raise RuntimeError("The WebAgg backend requires Tornado.") from err
+
+import tornado.web
+import tornado.ioloop
+import tornado.websocket
 
 import matplotlib as mpl
 from matplotlib.backend_bases import _Backend

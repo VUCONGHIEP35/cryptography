@@ -1,4 +1,17 @@
-numpy
-pandas
-matplotlib
-pytest
+matplotlib==3.10.5
+fastapi==0.136.1
+uvicorn==0.47.0
+numpy==2.1.1
+pandas==2.2.3
+plotly==6.1.1
+pydantic==2.10.6
+pytest==8.3.5
+requests==2.32.3
+streamlit==1.55.0
+
+# Use this file to install the project’s direct dependencies.
+# Transitive dependencies are resolved automatically by pip.
+# Pinning every transitive dependency here may create conflicts later.
+# If you want a fully reproducible build, use requirements.lock.txt.
+
+
