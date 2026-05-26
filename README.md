@@ -10,21 +10,23 @@ Project này gồm 3 phần chính:
 Nếu bạn muốn khởi động nhanh backend và frontend, có sẵn các file `.bat` ở thư mục gốc dự án:
 
 - Bấm đúp [run_all.bat](run_all.bat) để tự tạo `venv` nếu chưa có, cài dependencies và mở đồng thời backend + frontend.
-- Bấm đúp [run_backend.bat](run_backend.bat) để mở PowerShell, kích hoạt `venv` (nếu cần) và chạy backend.
-- Bấm đúp [run_frontend.bat](run_frontend.bat) để mở PowerShell và chạy frontend.
+- Bấm đúp [run_backend.bat](run_backend.bat) để tự kiểm tra `venv`, tự tạo lại nếu bị copy/hỏng và chạy backend.
+- Bấm đúp [run_frontend.bat](run_frontend.bat) để tự kiểm tra `venv`, tự tạo lại nếu bị copy/hỏng và chạy frontend.
 
-Lưu ý: nếu di chuyển thư mục dự án, mở file `.bat` và kiểm tra đường dẫn bên trong trước khi bấm đúp.
+Lưu ý: nếu `venv` được copy từ máy khác, các file `.bat` sẽ tự xóa và tạo lại môi trường mới bằng Python 3 có sẵn trên máy hiện tại.
 
-`run_all.bat` sẽ dùng `python` hoặc `py -3.12` để tạo lại môi trường khi chưa có `venv`.
+Các file `.bat` sẽ ưu tiên cài theo [requirements.lock.txt](requirements.lock.txt), rồi mới dùng [requirements.txt](requirements.txt) nếu file lock không có.
+
+`run_all.bat` sẽ dùng `python` hoặc `py -3` để tạo lại môi trường khi chưa có `venv`.
 
 ## Yêu cầu
 
-- Python 3.12
+- Python 3 trên Windows, có `python` hoặc `py`
 - Windows PowerShell
 
 ## Cách chạy chuẩn
 
-Khuyến nghị: khi clone project về máy mới, hãy xóa `venv` cũ nếu có và tạo lại từ đầu. Không nên dùng lại `venv` copy từ máy khác vì đường dẫn Python rất dễ bị sai.
+Khuyến nghị: chỉ cần bấm đúp file `.bat`, script sẽ tự kiểm tra và tự dựng lại `venv` nếu môi trường cũ bị lỗi.
 
 ### 1) Mở thư mục dự án
 
@@ -34,7 +36,7 @@ cd "c:\Users\admin\Desktop\cryptography - Copy"
 
 ### 2) Xóa `venv` cũ nếu đã có
 
-Nếu trong thư mục dự án đã có sẵn `venv` từ lần trước hoặc từ máy khác, xóa đi:
+Nếu bạn muốn làm sạch thủ công, xóa `venv` cũ:
 
 ```powershell
 Remove-Item -Recurse -Force venv
@@ -51,7 +53,7 @@ python -m venv venv
 Nếu `python` không ổn định, dùng launcher `py` của Windows:
 
 ```powershell
-py -3.12 -m venv venv
+py -3 -m venv venv
 ```
 
 ### 4) Kích hoạt `venv`
