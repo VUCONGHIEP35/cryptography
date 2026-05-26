@@ -103,6 +103,71 @@ def _set_task(task_id: str, **updates: Any) -> None:
         task_store.setdefault(task_id, {}).update(updates)
 
 
+def _format_candidate_bits(candidate_hex: str, nibble_count: int) -> str:
+    raw = candidate_hex.lower().replace("0x", "")
+    raw = raw[-nibble_count:].rjust(nibble_count, "0")
+    bits = "".join(f"{int(ch, 16):04b}" for ch in raw)
+    return " ".join(bits[i : i + 4] for i in range(0, len(bits), 4))
+
+
+def _extract_target_nibbles_hex(value: int, target_sboxes: List[int]) -> str:
+    nibbles: list[str] = []
+    for sbox_idx in target_sboxes:
+        shift = (15 - int(sbox_idx)) * 4
+        nib = (int(value) >> shift) & 0xF
+        nibbles.append(f"{nib:X}")
+    return "".join(nibbles) if nibbles else "0"
+
+
+def _derive_final_round_subkey(secret_key: int, rounds: int, width_bits: int = 64) -> int:
+    mask = (1 << width_bits) - 1
+    key_value = int(secret_key) & mask
+    for _ in range(max(0, int(rounds))):
+        key_value = ((key_value << 1) | (key_value >> (width_bits - 1))) & mask
+    return key_value
+
+
+def _recover_master_low8_from_candidate(
+    candidate_hex: str,
+    target_sboxes: List[int],
+    attack_rounds: int,
+) -> tuple[int | None, str, List[int]]:
+    raw = candidate_hex.lower().replace("0x", "")
+    num_sboxes = max(1, len(target_sboxes))
+    raw = raw[-num_sboxes:].rjust(num_sboxes, "0")
+
+    candidate_value = int(raw, 16)
+    known_mask = 0
+    subkey_known = 0
+
+    for i, sbox_idx in enumerate(target_sboxes):
+        nibble_shift = (num_sboxes - 1 - i) * 4
+        guess_nibble = (candidate_value >> nibble_shift) & 0xF
+        global_shift = (15 - int(sbox_idx)) * 4
+        known_mask |= (0xF << global_shift)
+        subkey_known |= (guess_nibble << global_shift)
+
+    rounds = max(0, int(attack_rounds))
+    needed_positions = [((bit + rounds) % 64) for bit in range(8)]
+    missing_positions = [pos for pos in needed_positions if ((known_mask >> pos) & 1) == 0]
+    needed_sboxes = sorted({15 - (pos // 4) for pos in needed_positions})
+
+    if missing_positions:
+        note = (
+            "Chua du bit de suy ra 8 bit cuoi khoa goc. "
+            f"Voi rounds={rounds}, can them cac S-Box muc tieu: {needed_sboxes}."
+        )
+        return None, note, needed_sboxes
+
+    master_low8 = 0
+    for bit in range(8):
+        subkey_pos = (bit + rounds) % 64
+        master_bit = (subkey_known >> subkey_pos) & 1
+        master_low8 |= (master_bit << bit)
+
+    return master_low8, "Da suy nguoc du 8 bit cuoi khoa goc.", needed_sboxes
+
+
 def _run_attack_task(task_id: str, req: AttackRequest) -> None:
     _set_task(task_id, status="running")
     try:
@@ -120,16 +185,59 @@ def _run_attack_task(task_id: str, req: AttackRequest) -> None:
         )
         execution_time_ms = int((time.perf_counter() - start_time) * 1000)
 
+        nibble_count = max(1, len(req.target_sboxes))
+        best_candidate_hex = result["best_candidate_hex"]
+        best_candidate_bits = _format_candidate_bits(best_candidate_hex, nibble_count)
+
+        final_round_subkey = _derive_final_round_subkey(req.secret_key, req.rounds)
+        final_round_subkey_hex = f"0x{final_round_subkey:016X}"
+        final_round_target_hex = _extract_target_nibbles_hex(final_round_subkey, req.target_sboxes)
+        final_round_reference_bits = _format_candidate_bits(f"0x{final_round_target_hex}", nibble_count)
+
+        recovered_low8, recovery_note, needed_sboxes = _recover_master_low8_from_candidate(
+            best_candidate_hex,
+            req.target_sboxes,
+            req.rounds,
+        )
+
+        master_low8_truth = int(req.secret_key) & 0xFF
+        master_low8_truth_hex = f"0x{master_low8_truth:02X}"
+        master_low8_truth_bits = f"{master_low8_truth:08b}"
+        master_low8_truth_bits = " ".join(master_low8_truth_bits[i : i + 4] for i in range(0, 8, 4))
+
+        if recovered_low8 is None:
+            recovered_low8_hex = None
+            recovered_low8_bits = None
+            recovery_ok = False
+        else:
+            recovered_low8_hex = f"0x{int(recovered_low8):02X}"
+            recovered_low8_bits = f"{int(recovered_low8):08b}"
+            recovered_low8_bits = " ".join(recovered_low8_bits[i : i + 4] for i in range(0, 8, 4))
+            recovery_ok = (int(recovered_low8) == master_low8_truth)
+
         _set_task(
             task_id,
             status="completed",
             result={
-                "best_candidate_hex": result["best_candidate_hex"],
-                "top_candidate_hex": result["best_candidate_hex"],
+                "best_candidate_hex": best_candidate_hex,
+                "top_candidate_hex": best_candidate_hex,
+                "best_candidate_bits": best_candidate_bits,
+                "candidate_meaning": "Candidate la gia thuyet khoa con vong cuoi tren cac S-Box muc tieu.",
+                "candidate_space_size": 16 ** nibble_count,
+                "nibble_count": nibble_count,
                 "best_score": result["best_score"],
                 "num_samples": req.num_samples,
                 "target_sboxes": req.target_sboxes,
                 "rounds": req.rounds,
+                "final_round_subkey_hex": final_round_subkey_hex,
+                "final_round_reference_bits": final_round_reference_bits,
+                "master_low8_recovered_hex": recovered_low8_hex,
+                "master_low8_recovered_bits": recovered_low8_bits,
+                "master_low8_recovery_note": recovery_note,
+                "required_target_sboxes_for_master_low8": needed_sboxes,
+                "master_low8_recovery_ok": recovery_ok,
+                "master_key_low8_truth_hex": master_low8_truth_hex,
+                "master_key_low8_truth_bits": master_low8_truth_bits,
                 "scores": result["scores"],
                 "execution_time_ms": execution_time_ms,
             },
