@@ -62,7 +62,7 @@ if 'sys_config' not in st.session_state:
     }
 
 # CẤU HÌNH TRANG CHÍNH
-st.set_page_config(page_title="Visual Differential Cryptanalysis Toolkit", layout="wide")
+st.set_page_config(page_title="Visual Differential Cryptanalysis", layout="wide")
 
 def inject_cyber_theme() -> None:
     st.markdown(
@@ -208,7 +208,7 @@ def render_sbox_visual_grid(delta_val: int):
             )
 
 # KHUNG GIAO DIỆN CHÍNH
-st.title("⚡ Toolkit Thám Mã Vi Phân (PRESENT 64-bit)")
+st.title("⚡ Thám Mã Vi Phân (PRESENT 64-bit)")
 st.markdown("---")
 
 tab_config, tab_heatmap, tab_path, tab_attack = st.tabs([
