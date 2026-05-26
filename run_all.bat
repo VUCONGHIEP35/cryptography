@@ -2,21 +2,27 @@
 setlocal
 cd /d "%~dp0"
 set "APP_DIR=%~dp0"
+set "VENV_DIR=%APP_DIR%venv"
+set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
+set "REQ_FILE=%APP_DIR%requirements.lock.txt"
+
+if not exist "%REQ_FILE%" set "REQ_FILE=%APP_DIR%requirements.txt"
 
 set "PY_CMD="
-where python >nul 2>&1 && set "PY_CMD=python"
-if not defined PY_CMD where py >nul 2>&1 && set "PY_CMD=py -3.12"
+python -c "import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)" >nul 2>&1
+if not errorlevel 1 set "PY_CMD=python"
+if not defined PY_CMD py -3 -c "import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)" >nul 2>&1 && set "PY_CMD=py -3"
 
 if not defined PY_CMD (
     echo Khong tim thay python hoac py tren may.
-    echo Hay cai Python 3.12 truoc khi chay script nay.
+    echo Hay cai Python 3 tren may truoc khi chay script nay.
     pause
     exit /b 1
 )
 
-if not exist "venv\Scripts\python.exe" (
-    echo Dang tao venv...
-    %PY_CMD% -m venv venv
+if not exist "%VENV_PY%" (
+    echo Chua co venv, dang tao moi...
+    call :create_venv
     if errorlevel 1 (
         echo Tao venv that bai.
         pause
@@ -24,15 +30,30 @@ if not exist "venv\Scripts\python.exe" (
     )
 )
 
+if exist "%VENV_PY%" (
+    "%VENV_PY%" -c "import sys" >nul 2>&1
+    if errorlevel 1 (
+        echo Venv cu bi hong hoac tro den Python khong con ton tai.
+        echo Dang xoa va tao lai venv...
+        if exist "%VENV_DIR%" rmdir /s /q "%VENV_DIR%"
+        call :create_venv
+        if errorlevel 1 (
+            echo Tao venv that bai.
+            pause
+            exit /b 1
+        )
+    )
+)
+
 echo Dang nang cap pip va cai dependencies...
-"venv\Scripts\python.exe" -m pip install --upgrade pip
+"%VENV_PY%" -m pip install --upgrade pip
 if errorlevel 1 (
     echo Cap nhat pip that bai.
     pause
     exit /b 1
 )
 
-"venv\Scripts\python.exe" -m pip install -r requirements.txt
+"%VENV_PY%" -m pip install -r "%REQ_FILE%"
 if errorlevel 1 (
     echo Cai dependencies that bai.
     pause
@@ -40,10 +61,16 @@ if errorlevel 1 (
 )
 
 echo Dang mo backend...
-start "Backend" /D "%APP_DIR%" cmd /k ""venv\Scripts\python.exe" -m uvicorn backend.main:app --reload --port 8000"
+start "Backend" /D "%APP_DIR%" cmd /k ""%VENV_PY%" -m uvicorn backend.main:app --reload --port 8000"
 
 echo Dang mo frontend...
-start "Frontend" /D "%APP_DIR%" cmd /k ""venv\Scripts\python.exe" -m streamlit run frontend/app.py"
+start "Frontend" /D "%APP_DIR%" cmd /k ""%VENV_PY%" -m streamlit run frontend/app.py"
 
 echo Da mo ca backend va frontend.
 pause
+exit /b 0
+
+:create_venv
+call %PY_CMD% -m venv "%VENV_DIR%"
+if errorlevel 1 exit /b 1
+exit /b 0
