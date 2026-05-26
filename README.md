@@ -6,21 +6,23 @@ Project này gồm 3 phần chính:
 - `backend/`: FastAPI backend cung cấp API cho frontend
 - `frontend/`: Streamlit UI
 
-## Chạy nhanh bằng file .bat (bấm đúp)
+## Chạy nhanh bằng file .bat
+Nếu bạn muốn khởi động nhanh backend và frontend, có sẵn các file `.bat` ở thư mục gốc dự án:
 
-Nếu bạn muốn khởi động nhanh backend và frontend, có sẵn hai file `.bat` ở thư mục gốc dự án:
-
+- Bấm đúp [run_all.bat](run_all.bat) để tự tạo `venv` nếu chưa có, cài dependencies và mở đồng thời backend + frontend.
 - Bấm đúp [run_backend.bat](run_backend.bat) để mở PowerShell, kích hoạt `venv` (nếu cần) và chạy backend.
 - Bấm đúp [run_frontend.bat](run_frontend.bat) để mở PowerShell và chạy frontend.
 
 Lưu ý: nếu di chuyển thư mục dự án, mở file `.bat` và kiểm tra đường dẫn bên trong trước khi bấm đúp.
+
+`run_all.bat` sẽ dùng `python` hoặc `py -3.12` để tạo lại môi trường khi chưa có `venv`.
 
 ## Yêu cầu
 
 - Python 3.12
 - Windows PowerShell
 
-## Cách chạy chuẩn cho cả nhóm
+## Cách chạy chuẩn
 
 Khuyến nghị: khi clone project về máy mới, hãy xóa `venv` cũ nếu có và tạo lại từ đầu. Không nên dùng lại `venv` copy từ máy khác vì đường dẫn Python rất dễ bị sai.
 
