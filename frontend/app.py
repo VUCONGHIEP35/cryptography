@@ -31,11 +31,11 @@ except Exception as exc:  # pragma: no cover - surfaced in UI
 
 API_BASE_URL = "http://localhost:8000"
 API_TIMEOUT = 20
-DEFAULT_PAIRS = 10000
+DEFAULT_PAIRS = 30000
 MAX_PAIRS = 100000
 DEFAULT_SECRET_KEY = "0x1110011100111011"
 DEFAULT_DELTA_P = "0x11"
-DEFAULT_EXPECTED_DELTA_U = "0x11"  # Mocktest mặc định cho Delta Y hiện tại
+DEFAULT_EXPECTED_DELTA_U = "0x4004400440040000"  # Preset mocktest đã được kiểm chứng
 DEFAULT_PATH_DELTA = "0x11"
 DEFAULT_PATH_ROUNDS = 4
 DEFAULT_GLOBAL_LIMIT = 20.0
@@ -86,6 +86,95 @@ if "scene_results" not in st.session_state:
 
 
 st.set_page_config(page_title="Demo Thám Mã Vi Phân", layout="wide")
+
+
+def clear_downstream_scene_results() -> None:
+    for scene_key in ("path", "attack"):
+        st.session_state.scene_results[scene_key] = None
+        st.session_state.scene_completed[scene_key] = False
+
+
+def sync_setup_widget_state() -> None:
+    setup_state = st.session_state.demo_config
+    widget_defaults = {
+        "setup_secret_key": setup_state["secret_key"],
+        "setup_delta_p": setup_state["delta_p"],
+        "setup_pairs": int(setup_state["pairs"]),
+        "setup_path_delta_in": setup_state["path_delta_in"],
+        "setup_path_rounds": int(setup_state["path_rounds"]),
+        "setup_global_limit": float(setup_state["global_limit"]),
+        "setup_expected_delta_u": setup_state["expected_delta_u"],
+        "setup_attack_rounds": int(setup_state["attack_rounds"]),
+    }
+    for key, value in widget_defaults.items():
+        st.session_state.setdefault(key, value)
+
+
+def sync_setup_config_from_widgets() -> None:
+    selected_targets = [idx for idx in range(16) if st.session_state.get(f"target_sbox_{idx}", False)]
+    recommended_targets = required_target_sboxes_for_master_low8(int(st.session_state.get("setup_attack_rounds", DEFAULT_ATTACK_ROUNDS)))
+    if not selected_targets or not set(recommended_targets).issubset(set(selected_targets)):
+        selected_targets = recommended_targets
+    st.session_state.demo_config.update(
+        {
+            "secret_key": st.session_state.get("setup_secret_key", st.session_state.demo_config["secret_key"]),
+            "delta_p": st.session_state.get("setup_delta_p", st.session_state.demo_config["delta_p"]),
+            "pairs": int(st.session_state.get("setup_pairs", st.session_state.demo_config["pairs"])),
+            "path_delta_in": st.session_state.get("setup_path_delta_in", st.session_state.demo_config["path_delta_in"]),
+            "path_rounds": int(st.session_state.get("setup_path_rounds", st.session_state.demo_config["path_rounds"])),
+            "global_limit": float(st.session_state.get("setup_global_limit", st.session_state.demo_config["global_limit"])),
+            "expected_delta_u": st.session_state.get("setup_expected_delta_u", st.session_state.demo_config["expected_delta_u"]),
+            "attack_rounds": int(st.session_state.get("setup_attack_rounds", st.session_state.demo_config["attack_rounds"])),
+            "target_sboxes": selected_targets or DEFAULT_TARGET_SBOXES.copy(),
+        }
+    )
+
+
+def setup_config_signature() -> tuple[Any, ...]:
+    cfg = st.session_state.demo_config
+    return (
+        cfg["secret_key"],
+        cfg["delta_p"],
+        int(cfg["pairs"]),
+        cfg["path_delta_in"],
+        int(cfg["path_rounds"]),
+        float(cfg["global_limit"]),
+        cfg["expected_delta_u"],
+        int(cfg["attack_rounds"]),
+        tuple(int(x) for x in cfg.get("target_sboxes", [])),
+    )
+
+
+def invalidate_results_if_setup_changed() -> None:
+    signature = setup_config_signature()
+    previous_signature = st.session_state.get("_setup_config_signature")
+    if previous_signature != signature:
+        clear_downstream_scene_results()
+        st.session_state["_setup_config_signature"] = signature
+
+
+def apply_setup_config_to_widgets(config: dict[str, Any]) -> None:
+    st.session_state["setup_secret_key"] = config["secret_key"]
+    st.session_state["setup_delta_p"] = config["delta_p"]
+    st.session_state["setup_pairs"] = int(config["pairs"])
+    st.session_state["setup_path_delta_in"] = config["path_delta_in"]
+    st.session_state["setup_path_rounds"] = int(config["path_rounds"])
+    st.session_state["setup_global_limit"] = float(config["global_limit"])
+    st.session_state["setup_expected_delta_u"] = config["expected_delta_u"]
+    st.session_state["setup_attack_rounds"] = int(config["attack_rounds"])
+    for idx in range(16):
+        st.session_state[f"target_sbox_{idx}"] = idx in config["target_sboxes"]
+
+
+def apply_setup_config(config: dict[str, Any]) -> None:
+    st.session_state.demo_config = config.copy()
+    apply_setup_config_to_widgets(st.session_state.demo_config)
+    clear_downstream_scene_results()
+    st.session_state["_setup_config_signature"] = setup_config_signature()
+
+
+sync_setup_widget_state()
+invalidate_results_if_setup_changed()
 
 
 def inject_theme() -> None:
@@ -380,7 +469,8 @@ def render_table_preview(df: pd.DataFrame, height: int = 340) -> None:
 
 def render_setup_result(result: dict[str, Any]) -> None:
     render_metric_grid(result["metrics"])
-    st.markdown("**Bảng dữ liệu cuộn (preview)**")
+    preview_rows = len(result["preview_df"]) if result.get("preview_df") is not None else 0
+    st.markdown(f"**Bảng dữ liệu cuộn (preview {preview_rows} dòng đầu)**")
     render_table_preview(result["preview_df"], height=360)
     st.success("Dữ liệu đã sẵn sàng.")
 
@@ -469,6 +559,22 @@ def render_path_result(result: dict[str, Any]) -> None:
         st.warning("Không tìm thấy đường đi nào thỏa giới hạn hiện tại.")
 
 
+def get_path_final_delta() -> int | None:
+    path_result = st.session_state.scene_results.get("path")
+    if not path_result:
+        return None
+
+    path_list = path_result.get("path_list") or []
+    if not path_list:
+        return None
+
+    final_delta = path_list[-1][0]
+    try:
+        return int(final_delta)
+    except Exception:
+        return None
+
+
 def render_attack_result(result: dict[str, Any], cfg: dict[str, Any]) -> None:
     top_key = result.get("top_candidate_hex") or result.get("best_candidate_hex") or "N/A"
     exec_time = result.get("execution_time_ms", 0)
@@ -480,8 +586,10 @@ def render_attack_result(result: dict[str, Any], cfg: dict[str, Any]) -> None:
     recovered_master_bits = result.get("master_low8_recovered_bits")
     recovered_master_hex = result.get("master_low8_recovered_hex")
     recovered_master_note = result.get("master_low8_recovery_note", "")
+    recovered_master_ambiguous = bool(result.get("master_low8_recovery_ambiguous", False))
     candidate_meaning = result.get("candidate_meaning", "")
     candidate_space = result.get("candidate_space_size")
+    best_score_tie_count = result.get("best_score_tie_count")
     truth_low8_bits = result.get("master_key_low8_truth_bits")
     truth_low8_hex = result.get("master_key_low8_truth_hex")
     recovery_ok = bool(result.get("master_low8_recovery_ok", False))
@@ -501,6 +609,8 @@ def render_attack_result(result: dict[str, Any], cfg: dict[str, Any]) -> None:
             st.caption(f"{candidate_meaning} Khong gian candidate: {candidate_space} gia thuyet.")
         else:
             st.caption(candidate_meaning)
+    if best_score_tie_count and int(best_score_tie_count) > 1:
+        st.caption(f"Top score dang bi hoa {int(best_score_tie_count)} candidate, nen ket qua tuong doi chua duy nhat.")
     st.markdown(
         f"""
         <div class="metric-card" style="margin-top:12px;">
@@ -523,6 +633,8 @@ def render_attack_result(result: dict[str, Any], cfg: dict[str, Any]) -> None:
             """,
             unsafe_allow_html=True,
         )
+        if recovered_master_ambiguous:
+            st.success("Top score bị hòa nhưng vẫn tính là thành công theo cấu hình hiện tại.")
         if truth_low8_bits and truth_low8_hex:
             if recovery_ok:
                 st.success(f"Khop voi 8 bit cuoi khoa goc: {truth_low8_bits} ({truth_low8_hex}).")
@@ -670,57 +782,58 @@ with tab_setup:
 
     with col_right:
         st.subheader("Nhập tham số trình diễn")
-        if st.button("Nạp Mocktest 64-bit Chuẩn", key="btn_load_mocktest_64"):
-            st.session_state.demo_config = mocktest_64bit_config()
-            st.success("Đã nạp preset mocktest 64-bit chuẩn.")
+        if st.button("Nạp Kịch bản 1 - Secret Key 1110...", key="btn_load_mocktest_64"):
+            apply_setup_config(mocktest_64bit_config())
+            st.success("Đã nạp kịch bản 1.")
             st.rerun()
-        with st.form("setup_form"):
-            secret_key = st.text_input("Khóa bí mật (Secret Key)", value=st.session_state.demo_config["secret_key"])
-            delta_p = st.text_input("Sai phân đầu vào (delta X)", value=st.session_state.demo_config["delta_p"])
-            pairs = st.number_input(
-                "Số lượng cặp mẫu (Pairs)",
-                min_value=1000,
-                max_value=MAX_PAIRS,
-                value=int(st.session_state.demo_config["pairs"]),
-                step=1000,
-            )
-            st.markdown("**Cấu hình mạng SPN cho kịch bản**")
-            path_delta_in = st.text_input("Sai phân đầu vào gốc (delta X) cho tìm đường", value=st.session_state.demo_config["path_delta_in"])
-            path_rounds = st.number_input("Số vòng tìm đường", min_value=1, max_value=10, value=int(st.session_state.demo_config["path_rounds"]))
-            global_limit = st.number_input("Global limit", min_value=1.0, max_value=80.0, value=float(st.session_state.demo_config["global_limit"]), step=0.5)
-            expected_delta_u = st.text_input(
-                "Sai phân đầu ra (Delta Y)",
-                value=st.session_state.demo_config["expected_delta_u"],
-                help="Mặc định mocktest hiện tại là 0x11. Nếu bạn đổi số vòng/kịch bản, có thể sửa lại giá trị này."
-            )
-            st.markdown("**S-Box mục tiêu cho Key Recovery**")
-            target_columns = st.columns(4)
-            current_targets = set(int(x) for x in st.session_state.demo_config.get("target_sboxes", DEFAULT_TARGET_SBOXES))
-            selected_targets: list[int] = []
-            for idx in range(16):
-                with target_columns[idx % 4]:
-                    if st.checkbox(str(idx), value=(idx in current_targets), key=f"target_sbox_{idx}"):
-                        selected_targets.append(idx)
-            attack_rounds = st.number_input("Số vòng mô phỏng cho kịch bản tấn công", min_value=2, max_value=10, value=int(st.session_state.demo_config["attack_rounds"]))
-
-            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-            submitted = st.form_submit_button("Generate Data")
-
-        if submitted:
-            st.session_state.demo_config.update(
+        if st.button("Nạp Kịch bản 2 - Secret Key ABCDE...", key="btn_load_scenario_2"):
+            apply_setup_config(
                 {
-                    "secret_key": secret_key,
-                    "delta_p": delta_p,
-                    "pairs": int(pairs),
-                    "path_delta_in": path_delta_in,
-                    "path_rounds": int(path_rounds),
-                    "global_limit": float(global_limit),
-                    "expected_delta_u": expected_delta_u,
-                    "attack_rounds": int(attack_rounds),
-                    "target_sboxes": selected_targets or DEFAULT_TARGET_SBOXES.copy(),
+                    "pairs": 30000,
+                    "secret_key": "0xABCDE1234567897B",
+                    "delta_p": "0x11",
+                    "expected_delta_u": "0x4004400440040000",
+                    "path_delta_in": "0x11",
+                    "path_rounds": 4,
+                    "global_limit": 20.0,
+                    "attack_rounds": 3,
+                    "target_sboxes": required_target_sboxes_for_master_low8(3),
                 }
             )
-            with st.spinner("Backend đang sinh 10.000 cặp dữ liệu 64-bit..."):
+            st.success("Đã nạp kịch bản 2 tối ưu cho key ABCDE...")
+            st.rerun()
+        secret_key = st.text_input("Khóa bí mật (Secret Key)", key="setup_secret_key")
+        delta_p = st.text_input("Sai phân đầu vào (delta X)", key="setup_delta_p")
+        pairs = st.number_input(
+            "Số lượng cặp mẫu (Pairs)",
+            min_value=1000,
+            max_value=MAX_PAIRS,
+            step=1000,
+            key="setup_pairs",
+        )
+        st.markdown("**Cấu hình mạng SPN cho kịch bản**")
+        path_delta_in = st.text_input("Sai phân đầu vào gốc (delta X) cho tìm đường", key="setup_path_delta_in")
+        path_rounds = st.number_input("Số vòng tìm đường", min_value=1, max_value=10, key="setup_path_rounds")
+        global_limit = st.number_input("Global limit", min_value=1.0, max_value=80.0, step=0.5, key="setup_global_limit")
+        expected_delta_u = st.text_input(
+            "Sai phân đầu ra (Delta Y)",
+            key="setup_expected_delta_u",
+            help="Giá trị này sẽ được đồng bộ theo preset hoặc theo delta cuối của đường vi phân đã tìm."
+        )
+        st.markdown("**S-Box mục tiêu cho Key Recovery**")
+        target_columns = st.columns(4)
+        current_targets = set(int(x) for x in st.session_state.demo_config.get("target_sboxes", DEFAULT_TARGET_SBOXES))
+        for idx in range(16):
+            with target_columns[idx % 4]:
+                st.checkbox(str(idx), value=(idx in current_targets), key=f"target_sbox_{idx}")
+        attack_rounds = st.number_input("Số vòng mô phỏng cho kịch bản tấn công", min_value=2, max_value=10, key="setup_attack_rounds")
+
+        sync_setup_config_from_widgets()
+
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        if st.button("Generate Data", key="btn_generate_data"):
+            clear_downstream_scene_results()
+            with st.spinner(f"Backend đang sinh {int(pairs):,} cặp dữ liệu 64-bit..."):
                 payload = {
                     "sbox": SBOX_LIST,
                     "pbox": PBOX_LIST,
@@ -874,7 +987,7 @@ with tab_attack:
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     st.markdown('<div class="scene-kicker">Scene 4</div><div class="scene-title">Bóc trần sự thật - Real-time Key Recovery</div>', unsafe_allow_html=True)
     st.markdown(
-        "Đây là cú chốt demo: hệ thống chạy 10.000 cặp dữ liệu, lọc và leo điểm để rút ra khóa ứng viên nổi bật nhất.",
+        f"Đây là cú chốt demo: hệ thống chạy {int(st.session_state.demo_config['pairs']):,} cặp dữ liệu, lọc và leo điểm để rút ra khóa ứng viên nổi bật nhất.",
         unsafe_allow_html=True,
     )
 
@@ -912,12 +1025,15 @@ with tab_attack:
         if not target_sboxes:
             target_sboxes = DEFAULT_TARGET_SBOXES.copy()
 
+        path_final_delta = get_path_final_delta()
+        expected_delta_u = path_final_delta if path_final_delta is not None else parse_hex(cfg["expected_delta_u"])
+
         payload = {
             "num_samples": int(cfg["pairs"]),
             "delta_p": parse_hex(cfg["delta_p"]),
             "secret_key": parse_hex(cfg["secret_key"]),
             "target_sboxes": target_sboxes,
-            "expected_delta_u": parse_hex(cfg["expected_delta_u"]),
+            "expected_delta_u": expected_delta_u,
             "rounds": int(cfg["attack_rounds"]),
         }
 
@@ -977,17 +1093,22 @@ with tab_attack:
                 else:
                     score_values = list(scores)
 
+                attack_expected_delta_hex = f"0x{int(expected_delta_u):016X}"
+
                 st.session_state.scene_results["attack"] = {
                     "top_candidate_hex": result.get("top_candidate_hex") or result.get("best_candidate_hex") or "N/A",
                     "best_candidate_bits": result.get("best_candidate_bits"),
                     "candidate_meaning": result.get("candidate_meaning"),
                     "candidate_space_size": result.get("candidate_space_size"),
                     "nibble_count": result.get("nibble_count"),
+                    "best_score_tie_count": result.get("best_score_tie_count"),
+                    "attack_expected_delta_hex": attack_expected_delta_hex,
                     "final_round_subkey_hex": result.get("final_round_subkey_hex"),
                     "final_round_reference_bits": result.get("final_round_reference_bits"),
                     "master_low8_recovered_hex": result.get("master_low8_recovered_hex"),
                     "master_low8_recovered_bits": result.get("master_low8_recovered_bits"),
                     "master_low8_recovery_note": result.get("master_low8_recovery_note"),
+                    "master_low8_recovery_ambiguous": result.get("master_low8_recovery_ambiguous"),
                     "master_low8_recovery_ok": result.get("master_low8_recovery_ok"),
                     "master_key_low8_truth_hex": result.get("master_key_low8_truth_hex"),
                     "master_key_low8_truth_bits": result.get("master_key_low8_truth_bits"),

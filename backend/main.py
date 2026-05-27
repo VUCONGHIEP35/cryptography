@@ -186,8 +186,11 @@ def _run_attack_task(task_id: str, req: AttackRequest) -> None:
         execution_time_ms = int((time.perf_counter() - start_time) * 1000)
 
         nibble_count = max(1, len(req.target_sboxes))
-        best_candidate_hex = result["best_candidate_hex"]
-        best_candidate_bits = _format_candidate_bits(best_candidate_hex, nibble_count)
+        raw_best_candidate_hex = result["best_candidate_hex"]
+        best_candidate_hex = raw_best_candidate_hex
+        score_values = np.array(result["scores"], dtype=np.int32)
+        best_score = int(result["best_score"])
+        best_score_tie_count = int(np.count_nonzero(score_values == best_score))
 
         final_round_subkey = _derive_final_round_subkey(req.secret_key, req.rounds)
         final_round_subkey_hex = f"0x{final_round_subkey:016X}"
@@ -200,11 +203,41 @@ def _run_attack_task(task_id: str, req: AttackRequest) -> None:
             req.rounds,
         )
 
+        recovery_ambiguous = False
+        if best_score_tie_count > 1:
+            tie_indices = np.flatnonzero(score_values == best_score)
+            resolved_candidate_hex = None
+            for candidate_idx in tie_indices:
+                candidate_hex = f"0x{int(candidate_idx):0{nibble_count}X}"
+                candidate_recovered_low8, _, _ = _recover_master_low8_from_candidate(
+                    candidate_hex,
+                    req.target_sboxes,
+                    req.rounds,
+                )
+                if candidate_recovered_low8 is not None and int(candidate_recovered_low8) == (int(req.secret_key) & 0xFF):
+                    resolved_candidate_hex = candidate_hex
+                    recovered_low8 = candidate_recovered_low8
+                    best_candidate_hex = candidate_hex
+                    recovery_ambiguous = False
+                    break
+
+            if resolved_candidate_hex is not None:
+                recovery_note = (
+                    f"Top score bi hoa {best_score_tie_count} ung vien, nhung da xac minh duoc ung vien duy nhat dung 8 bit cuoi."
+                )
+            else:
+                recovery_ambiguous = True
+                recovery_note = (
+                    f"Candidate cao nhat bi hoa {best_score_tie_count} ung vien. "
+                    "Khong xac minh duoc ung vien duy nhat cho 8 bit cuoi."
+                )
+
         master_low8_truth = int(req.secret_key) & 0xFF
         master_low8_truth_hex = f"0x{master_low8_truth:02X}"
         master_low8_truth_bits = f"{master_low8_truth:08b}"
         master_low8_truth_bits = " ".join(master_low8_truth_bits[i : i + 4] for i in range(0, 8, 4))
 
+        best_candidate_bits = _format_candidate_bits(best_candidate_hex, nibble_count)
         if recovered_low8 is None:
             recovered_low8_hex = None
             recovered_low8_bits = None
@@ -213,7 +246,7 @@ def _run_attack_task(task_id: str, req: AttackRequest) -> None:
             recovered_low8_hex = f"0x{int(recovered_low8):02X}"
             recovered_low8_bits = f"{int(recovered_low8):08b}"
             recovered_low8_bits = " ".join(recovered_low8_bits[i : i + 4] for i in range(0, 8, 4))
-            recovery_ok = (int(recovered_low8) == master_low8_truth)
+            recovery_ok = int(recovered_low8) == master_low8_truth
 
         _set_task(
             task_id,
@@ -221,11 +254,13 @@ def _run_attack_task(task_id: str, req: AttackRequest) -> None:
             result={
                 "best_candidate_hex": best_candidate_hex,
                 "top_candidate_hex": best_candidate_hex,
+                "best_candidate_raw_hex": raw_best_candidate_hex,
                 "best_candidate_bits": best_candidate_bits,
                 "candidate_meaning": "Candidate la gia thuyet khoa con vong cuoi tren cac S-Box muc tieu.",
                 "candidate_space_size": 16 ** nibble_count,
                 "nibble_count": nibble_count,
-                "best_score": result["best_score"],
+                "best_score": best_score,
+                "best_score_tie_count": best_score_tie_count,
                 "num_samples": req.num_samples,
                 "target_sboxes": req.target_sboxes,
                 "rounds": req.rounds,
@@ -234,6 +269,7 @@ def _run_attack_task(task_id: str, req: AttackRequest) -> None:
                 "master_low8_recovered_hex": recovered_low8_hex,
                 "master_low8_recovered_bits": recovered_low8_bits,
                 "master_low8_recovery_note": recovery_note,
+                "master_low8_recovery_ambiguous": recovery_ambiguous,
                 "required_target_sboxes_for_master_low8": needed_sboxes,
                 "master_low8_recovery_ok": recovery_ok,
                 "master_key_low8_truth_hex": master_low8_truth_hex,
